@@ -1,0 +1,168 @@
+{{ define "toValue" }}
+
+func {{ .target.ToMethod }}(v interface{}) ({{ .target }}, error) {
+	if v == nil {
+		return 0, ErrNil
+	}
+	switch vt := v.(type) {
+{{- $t := .target -}}
+
+{{/* start for signed int cases */}}
+{{ range .signeds }}
+
+{{ if and (eq . "int") (ge $t.BitSize 32) -}}
+{{ if eq $t.BitSize 32 -}}
+	case int:
+		if vt < 0 || (!is64 || int64({{ $t.MaxVar }}) < int64(vt)) {
+			return 0, &RangeError{"int", "{{ $t }}", vt}
+		}
+		return {{ $t }}(vt), nil
+	case *int:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		if *vt < 0 || (!is64 || int64({{ $t.MaxVar }}) < int64(*vt)) {
+			return 0, &RangeError{"*int", "{{ $t }}", *vt}
+		}
+		return {{ $t }}(*vt), nil
+{{ else -}}
+	case int:
+		if vt < 0 {
+			return 0, &RangeError{"int", "{{ $t }}", vt}
+		}
+		return {{ $t }}(vt), nil
+	case *int:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		if *vt < 0 {
+			return 0, &RangeError{"*int", "{{ $t }}", *vt}
+		}
+		return {{ $t }}(*vt), nil
+{{ end -}}
+{{ else -}}
+{{ if .SizeEq $t -}}
+	case {{ . }}:
+		if vt < 0 {
+			return 0, &RangeError{"{{ . }}", "{{ $t }}", vt}
+		}
+		return {{ $t }}(vt), nil
+	case *{{ . }}:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		if *vt < 0 {
+			return 0, &RangeError{"*{{ . }}", "{{ $t }}", *vt}
+		}
+		return {{ $t }}(*vt), nil
+{{ end -}}
+
+{{ if .SizeLess $t -}}
+	case {{ . }}:
+		if vt < 0 {
+			return 0, &RangeError{"{{ . }}", "{{ $t }}", vt}
+		}
+		return {{ $t }}(vt), nil
+	case *{{ . }}:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		if *vt < 0 {
+			return 0, &RangeError{"*{{ . }}", "{{ $t }}", *vt}
+		}
+		return {{ $t }}(*vt), nil
+{{ end -}}
+
+{{ if .SizeGreater $t -}}
+	case {{ . }}:
+		if vt < 0 || {{ . }}({{ $t.MaxVar }}) < vt {
+			return 0, &RangeError{"{{ . }}", "{{ $t }}", vt}
+		}
+		return {{ $t }}(vt), nil
+	case *{{ . }}:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		if *vt < 0 || {{ . }}({{ $t.MaxVar }}) < *vt {
+			return 0, &RangeError{"*{{ . }}", "{{ $t }}", *vt}
+		}
+		return {{ $t }}(*vt), nil
+{{ end -}}
+{{ end -}}
+{{ end -}}
+
+{{/* start for unsigned int cases */}}
+{{ range .unsigneds }}
+
+{{ if eq . $t -}}
+	case {{ . }}:
+		return vt, nil
+	case *{{ . }}:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		return *vt, nil
+{{ end -}}
+
+{{ if .SizeLess $t -}}
+	case {{ . }}:
+		return {{ $t }}(vt), nil
+	case *{{ . }}:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		return {{ $t }}(*vt), nil
+{{ end -}}
+
+{{ if .SizeGreater $t -}}
+	case {{ . }}:
+		if {{ . }}({{ $t.MaxVar }}) < vt {
+			return 0, &RangeError{"{{ . }}", "{{ $t }}", vt}
+		}
+		return {{ $t }}(vt), nil
+	case *{{ . }}:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		if {{ . }}({{ $t.MaxVar }}) < *vt {
+			return 0, &RangeError{"*{{ . }}", "{{ $t }}", *vt}
+		}
+		return {{ $t }}(*vt), nil
+{{ end -}}
+{{- end }}
+{{/* start for string cases */}}
+	case string:
+		n, err := strconv.ParseUint(vt, 10, {{ .target.BitSize }})
+		if err != nil {
+			if errors.Is(err, strconv.ErrRange) {
+				err = &RangeError{"string", "{{ .target }}", vt}
+			}
+			return 0, err
+		}
+		r, err := {{ .target.ToMethod }}(n)
+		if err, ok := err.(*RangeError); ok && err != nil {
+			err.from = "string"
+		}
+		return r, err
+	case *string:
+		if vt == nil {
+			return 0, ErrNil
+		}
+		n, err := strconv.ParseUint(*vt, 10, {{ .target.BitSize }})
+		if err != nil {
+			if errors.Is(err, strconv.ErrRange) {
+				err = &RangeError{"*string", "{{ .target }}", *vt}
+			}
+			return 0, err
+		}
+		r, err := {{ .target.ToMethod }}(n)
+		if err, ok := err.(*RangeError); ok && err != nil {
+			err.from = "*string"
+		}
+		return r, err
+	
+	}
+	return 0, ErrNoNumConvert
+}
+
+{{ end }}
